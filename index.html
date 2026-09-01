@@ -3,54 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CS180 Portfolio — 0308ehub</title>
+  <title>Project 0: Becoming Friends with Your Camera — CS180</title>
+  <meta name="description" content="CS180 Project 0 — perspective, focal length, and the center of projection.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>CS180/280A Portfolio</h1>
-    <p class="sub">Computer Vision and Computational Photography · UC Berkeley</p>
+    <p class="tag">Programming Project #0</p>
+    <h1>Becoming Friends with Your Camera</h1>
+    <p class="sub">CS180: Intro to Computer Vision and Computational Photography · UC Berkeley</p>
+    <p class="meta">All photos shot on an iPhone 16. Focal lengths below are 35&nbsp;mm equivalent, read from each file's EXIF data.</p>
   </header>
 
   <main>
-    <p>Project write-ups for CS180/280A. Each project has its own page with the approach, results, and any extra credit.</p>
+    <p class="lede">Three small experiments in what happens when you change where you stand. Each pair below keeps the subject roughly the same size in frame, so the only real variable is the distance between the camera and the subject — and that turns out to change everything.</p>
 
-    <h2>Projects</h2>
-    <div class="grid">
-      <a class="card" href="./1/index.html">
-        <span class="num">Project 1</span>
-        <h3>Colorizing Prokudin-Gorskii</h3>
-        <p>Images of the Russian Empire</p>
-      </a>
+    <h2>Part 1 · Selfie: The Wrong Way vs. The Right Way</h2>
+    <div class="pair">
+      <figure>
+        <img src="./media/selfie-close.jpg" alt="Portrait taken from close range at 42mm equivalent, showing wide-angle facial distortion" width="1200" height="1600" loading="eager">
+        <figcaption><b>The wrong way.</b> Close up, 42&nbsp;mm. The nose and forehead push forward, the ears fall away, and the whole face bulges slightly.</figcaption>
+      </figure>
+      <figure>
+        <img src="./media/selfie-far.jpg" alt="Portrait taken from several feet back at 157mm equivalent, with natural facial proportions" width="1200" height="1600" loading="lazy">
+        <figcaption><b>The right way.</b> Several feet back and zoomed in, 157&nbsp;mm. Same framing, far more natural proportions.</figcaption>
+      </figure>
+    </div>
+    <div class="why">
+      <h3>Why</h3>
+      <p>The lens is not what flattered or wrecked the face — the distance did. Shooting from about a foot away, my nose is meaningfully closer to the center of projection than my ears are, so it projects much larger. Stepping back to six feet shrinks that ratio toward 1, and the projection approaches an orthographic one where near and far features scale almost equally. Zooming in only restores the framing; it does not touch perspective at all.</p>
+    </div>
 
-      <div class="card soon">
-        <span class="num">Project 2</span>
-        <h3>Project 2</h3>
-        <p>Coming soon</p>
-      </div>
+    <h2>Part 2 · Architectural Perspective Compression</h2>
+    <div class="pair">
+      <figure>
+        <img src="./media/building-zoom.jpg" alt="Colonnade photographed from far away at 114mm equivalent, appearing flattened" width="1200" height="1600" loading="lazy">
+        <figcaption><b>Far and zoomed, 114&nbsp;mm.</b> The row of columns stacks up and the facade reads almost flat, like a relief.</figcaption>
+      </figure>
+      <figure>
+        <img src="./media/building-near.jpg" alt="Same colonnade photographed up close at 27mm equivalent, with strong depth and converging lines" width="1200" height="1600" loading="lazy">
+        <figcaption><b>Walked up, 27&nbsp;mm.</b> The same colonnade now races away from the camera with strong converging lines.</figcaption>
+      </figure>
+    </div>
+    <div class="why">
+      <h3>Why</h3>
+      <p>This is the selfie effect run in reverse. From far away, the difference in distance between the nearest column and the farthest one is small compared to how far away all of them are, so they project at nearly the same scale and depth collapses. Up close, that same difference is a large fraction of the total distance, so the near columns tower over the far ones and the recession becomes dramatic.</p>
+    </div>
 
-      <div class="card soon">
-        <span class="num">Project 3</span>
-        <h3>Project 3</h3>
-        <p>Coming soon</p>
-      </div>
-
-      <div class="card soon">
-        <span class="num">Project 4</span>
-        <h3>Project 4</h3>
-        <p>Coming soon</p>
-      </div>
-
-      <div class="card soon">
-        <span class="num">Project 5</span>
-        <h3>Project 5</h3>
-        <p>Coming soon</p>
-      </div>
+    <h2>Part 3 · The Dolly Zoom</h2>
+    <div class="gif-wrap">
+      <img src="./media/dolly-zoom.gif" alt="Animated dolly zoom: the subject stays the same size while the background expands behind it" width="480" height="640" loading="lazy">
+    </div>
+    <div class="why">
+      <h3>Why</h3>
+      <p>Each frame walks the camera backward while zooming in by just enough to hold the subject at a constant size. Because the subject is pinned, the only thing free to change is everything behind it: as the camera retreats, the background's relative depth compresses and it appears to swell forward. The subject sits still while the world reorganizes around it — which is exactly the unsettling quality Hitchcock was after in <i>Vertigo</i>.</p>
     </div>
   </main>
 
   <footer>
-    <a href="https://github.com/0308ehub">github.com/0308ehub</a>
+    <a href="https://github.com/0308ehub/0308ehub.github.io">Source on GitHub</a>
   </footer>
 </body>
 </html>

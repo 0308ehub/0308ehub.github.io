@@ -122,3 +122,61 @@ footer {
     --accent: #7aa2f7;
   }
 }
+
+/* --- project 0 additions --- */
+.meta {
+  font-size: .875rem;
+  color: var(--muted);
+  margin: .5rem 0 0;
+}
+
+.lede {
+  font-size: 1.1rem;
+  max-width: 66ch;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.pair figure { margin: 0; }
+
+.pair img {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+figcaption b { color: var(--ink); }
+
+.tag {
+  display: inline-block;
+  font-size: .7rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: .1rem .5rem;
+  margin-bottom: .4rem;
+}
+
+.gif-wrap { max-width: 420px; margin: 1.5rem 0 2rem; }
+.gif-wrap img { border: 1px solid var(--line); border-radius: 4px; }
+
+.why {
+  border-left: 3px solid var(--accent);
+  padding: .25rem 0 .25rem 1rem;
+  margin: 1.25rem 0;
+}
+.why h3 {
+  font-family: var(--sans);
+  font-size: .8rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 .35rem;
+}
+.why p { margin: 0; }
