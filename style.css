@@ -1,0 +1,124 @@
+:root {
+  --paper: #fbfaf7;
+  --ink: #1a1a1a;
+  --muted: #6b6b6b;
+  --line: #ddd9d2;
+  --accent: #1d4ed8;
+  --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --sans: -apple-system, "Helvetica Neue", system-ui, sans-serif;
+  --wrap: 900px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 3rem 1.25rem 4rem;
+  max-width: var(--wrap);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+h1 {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 1.2rem + 3.5vw, 3.25rem);
+  line-height: 1.1;
+  margin: 0 0 .4rem;
+}
+
+h2 {
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  margin: 2.5rem 0 .5rem;
+}
+
+p { max-width: 68ch; }
+
+.sub { color: var(--muted); margin: 0; }
+
+header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.back {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  text-decoration: none;
+}
+.back:hover { text-decoration: underline; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.card {
+  display: block;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .2s ease, transform .2s ease;
+}
+
+a.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.card .num {
+  font-size: .75rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.card h3 {
+  font-family: var(--serif);
+  margin: .3rem 0;
+  font-size: 1.15rem;
+}
+
+.card p { font-size: .9rem; color: var(--muted); margin: 0; }
+
+.card.soon {
+  opacity: .55;
+  border-style: dashed;
+}
+
+figure { margin: 1.5rem 0; }
+img { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: .875rem; color: var(--muted); margin-top: .5rem; }
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+  font-size: .875rem;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #16161a;
+    --ink: #eceae6;
+    --muted: #9a9a9a;
+    --line: #34343a;
+    --accent: #7aa2f7;
+  }
+}
