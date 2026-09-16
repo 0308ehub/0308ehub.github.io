@@ -32,10 +32,6 @@
         <h3>Cathedral</h3>
         <img src="media/cathedral.jpg" alt="Cathedral">
         <p>Green offset: (5, 2), Red offset: (12, 3)</p>
-        <p>
-            This was the main failure for my alignment method. The final result was not perfectly aligned visually even though the L2 search selected offsets of (5, 2) for the green channel and (12, 3) for the red channel. 
-            This is most likeley due to the fact that the raw L2 pixel similarity is sensitive to intensity differences between the color channels, and does not explicitly match edges or structural features. This can be fixed in a better method by aligning image gradients or edges. 
-        </p>
 
         <h3>Monastery</h3>
         <img src="media/monastery.jpg" alt="Monastery">
@@ -61,6 +57,10 @@
         <h3>Church</h3>
         <img src="media/church.jpg" alt="Church">
         <p>Green offset: (25, 4), Red offset: (63, 214)</p>
+        <p>
+            This was the main failure for my alignment method. The final result was not perfectly aligned visually even though the L2 search selected offsets of (5, 2) for the green channel and (12, 3) for the red channel. 
+            This is most likeley due to the fact that the raw L2 pixel similarity is sensitive to intensity differences between the color channels, and does not explicitly match edges or structural features. This can be fixed in a better method by aligning image gradients or edges. 
+        </p>
 
         <h3>Emir</h3>
         <img src="media/emir.jpg" alt="Emir">
