@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project 2: Fun with Filters and Frequencies · CS180</title>
+  <meta name="description" content="CS180 Project 2: convolution from scratch, edge detection, unsharp masking, hybrid images, and multiresolution blending.">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    pre {
+      background: rgba(127, 127, 127, .09);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: .9rem 1rem;
+      overflow-x: auto;
+      font-size: .82rem;
+      line-height: 1.5;
+    }
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+    p code, li code, td code {
+      background: rgba(127, 127, 127, .12);
+      padding: .1em .35em;
+      border-radius: 3px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1.25rem 0;
+      font-size: .9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: .45rem .7rem;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      font-size: .75rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    td.num { font-variant-numeric: tabular-nums; }
+
+    .shot { margin: 1.5rem 0 2rem; }
+    .shot img {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      width: 100%;
+    }
+    .shot figcaption { margin-top: .6rem; }
+
+    h4 {
+      font-family: var(--sans);
+      font-size: .8rem;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 1.75rem 0 .5rem;
+    }
+    .takeaway {
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 1.25rem 1.5rem;
+      margin: 2.5rem 0 1rem;
+    }
+    .takeaway h3 { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <a class="back" href="../">&larr; all projects</a>
+
+  <header>
+    <p class="tag">Programming Project #2</p>
+    <h1>Fun with Filters and Frequencies</h1>
+    <p class="sub">CS180: Intro to Computer Vision and Computational Photography</p>
+  </header>
+
+  <main>
+    <p class="lede">This project starts with the 2D convolution, and finds new things to do with it. For example, if you slide a kernel of differences over an image and you get edges. Another example is if you slide a Gaussian and you get the blur. Subtract the blur from the original and you have isolated the fine detail, which we can then amplify to sharpen, or put onto a different photograph. </p>
+
+    <h2 id="p11">Part 1.1 &middot; Convolutions from Scratch</h2>
+
+    <p>I wrote 2D convolution twice, first with four nested loops and then with two. Both zero-pad the input by half the kernel size so the output keeps the input's dimensions, and both flip the kernel before applying it, which is what separates convolution from correlation.</p>
+
+    <h4>Four loops</h4>
+<pre><code>def convolution_four_loops(image, kernel):
+    rows, cols = image.shape
+    krows, kcols = kernel.shape
+    py, px = krows // 2, kcols // 2
+    padded = np.pad(image, ((py, py), (px, px)), mode="constant")
+    flipped = np.flip(kernel, axis=(0, 1))
+    res = np.zeros_like(image, dtype=float)
+    for r in range(rows):
+        for c in range(cols):
+            for a in range(krows):
+                for b in range(kcols):
+                    res[r, c] += padded[r + a, c + b] * flipped[a, b]
+    return res</code></pre>
+
+    <h4>Two loops</h4>
+    <p>The inner pair of loops does nothing but multiply a kernel-sized window against the kernel and sum it, so NumPy can do the whole window at once:</p>
+<pre><code>def convolution_two_loops(image, kernel):
+    rows, cols = image.shape
+    krows, kcols = kernel.shape
+    py, px = krows // 2, kcols // 2
+    padded = np.pad(image, ((py, py), (px, px)), mode="constant")
+    flipped = np.flip(kernel, axis=(0, 1))
+    res = np.zeros_like(image, dtype=float)
+    for r in range(rows):
+        for c in range(cols):
+            patch = padded[r:r + krows, c:c + kcols]
+            res[r, c] = np.sum(patch * flipped)
+    return res</code></pre>
+
+    <h4>Checking against SciPy</h4>
+    <p>Both implementations match <code>scipy.signal.convolve2d</code> exactly, on a 3&times;3 test matrix and on a real image crop:</p>
+<pre><code>four loops matches scipy: True
+two loops matches scipy:  True</code></pre>
+
+    <h4>Runtime</h4>
+    <p>Measured on a 150&times;150 crop with the 9&times;9 box filter. I timed on a crop rather than the full photo because the four-loop version on the whole image takes minutes.</p>
+
+    <table>
+      <tr><th>Implementation</th><th>Time</th><th>Relative</th></tr>
+      <tr><td>four loops</td><td class="num">0.331 s</td><td class="num">1&times;</td></tr>
+      <tr><td>two loops</td><td class="num">0.025 s</td><td class="num">13&times; faster</td></tr>
+      <tr><td><code>scipy.signal.convolve2d</code></td><td class="num">0.0015 s</td><td class="num">221&times; faster</td></tr>
+    </table>
+
+    <p>The gap is due to how much work happens inside the Python interpreter. The four-loop version runs all 150&nbsp;&times;&nbsp;150&nbsp;&times;&nbsp;81 &asymp; 1.8 million multiply-adds as Python bytecode. The two-loop version hands each 9&times;9 window to NumPy, so only 22,500 iterations are interpreted and the 81 multiplies inside each one run in compiled C. SciPy pushes the whole double loop into compiled code, which costs another order of magnitude on top.</p>
+
+    <h4>Boundaries</h4>
+    <p>I pad with zeros by <code>kh//2</code> and <code>kw//2</code>, which is equivalent to <code>mode="same", boundary="fill", fillvalue=0</code> in SciPy. This keeps the output the same size as the input, but it does have a cost. The outer few pixels of the box-filtered image are darkened, because those averages mix real pixels with the black padding. SciPy also offers <code>boundary="symm"</code>, which mirrors the image at the edge, and <code>boundary="wrap"</code>, which tiles it. Both avoid the dark border by inventing plausible content instead of zeros.</p>
+
+    <figure class="shot">
+      <img src="media/1_1_filters.png" alt="A grayscale photo, the same photo blurred by a 9x9 box filter, and its Dx and Dy finite difference responses" width="1400" height="500" loading="eager">
+      <figcaption>A photo of me, convolved with a 9&times;9 box filter and with the finite difference operators. <b>Dx</b> responds to vertical structure, like the glass panel frames and the hallway's converging verticals. <b>Dy</b> responds to horizontal structure, like the ceiling tile seams and the railing. My face is faint in both, because skin is almost entirely low frequency.</figcaption>
+    </figure>
+
+    <h2 id="p12">Part 1.2 &middot; Finite Difference Operator</h2>
+
+    <p>Convolving the cameraman with <code>Dx = [1, -1]</code> and <code>Dy = [1, -1]&#7488;</code> gives the partial derivatives in x and y. Combining them into the gradient magnitude, <code>sqrt(Dx&sup2; + Dy&sup2;)</code>, gives a single measure of edge strength at every pixel, which I then threshold to get a binary edge map.</p>
+
+    <figure class="shot">
+      <img src="media/1_2_finite_difference.png" alt="Cameraman original, Dx, Dy, gradient magnitude, and binarized edges" width="1600" height="400" loading="lazy">
+      <figcaption>From left to right, the original, the x and y partial derivatives, the gradient magnitude, and the binarized edge image at a threshold of 0.20.</figcaption>
+    </figure>
+
+    <h4>Choosing the threshold</h4>
+    <p>I swept six thresholds rather than guessing one.</p>
+
+    <figure class="shot">
+      <img src="media/1_2_threshold_sweep.png" alt="Six binarized edge maps at thresholds from 0.05 to 0.30" width="1800" height="350" loading="lazy">
+      <figcaption>Thresholds from 0.05 to 0.30. The grass field is the region that decides the answer.</figcaption>
+    </figure>
+
+    <table>
+      <tr><th>Threshold</th><th>Pixels kept</th><th>What it looks like</th></tr>
+      <tr><td class="num">0.05</td><td class="num">15.2%</td><td>The grass is solid speckle. Unusable.</td></tr>
+      <tr><td class="num">0.10</td><td class="num">8.7%</td><td>Lower half still heavily noisy.</td></tr>
+      <tr><td class="num">0.15</td><td class="num">5.7%</td><td>Grass mostly clean, some residual speckle.</td></tr>
+      <tr><td class="num"><b>0.20</b></td><td class="num"><b>4.3%</b></td><td><b>Grass clean; coat, tripod, camera and horizon all intact.</b></td></tr>
+      <tr><td class="num">0.25</td><td class="num">3.4%</td><td>Distant buildings start breaking up.</td></tr>
+      <tr><td class="num">0.30</td><td class="num">2.8%</td><td>Skyline gone, tripod legs fragmenting.</td></tr>
+    </table>
+
+    <p>I picked <b>0.20</b>. A single global threshold has no way to tell it apart from the tripod legs except by magnitude, so every threshold has a tradeoff. Below 0.15 the field floods with speckle. Above 0.25 the distant skyline starts disappearing while the field is already clean, so you are paying real edges for noise you have already removed. 0.20 sits in the gap between those two main failures.</p>
+
+    <h2 id="p13">Part 1.3 &middot; Derivative of Gaussian Filter</h2>
+
+    <p>The Part 1.2 result is noisy because differentiation amplifies high frequencies. The fix is to smooth first. I built a 9&times;9 Gaussian with <code>cv2.getGaussianKernel(9, 2)</code> and an outer product, blurred the cameraman, and repeated the whole gradient pipeline.</p>
+
+    <figure class="shot">
+      <img src="media/1_3_smoothed.png" alt="Gaussian blurred cameraman, its gradient magnitude, smoothed edges, and the Part 1.2 edges for comparison" width="1600" height="400" loading="lazy">
+      <figcaption>Smoothing first, with the Part 1.2 result on the right for comparison.</figcaption>
+    </figure>
+
+    <h4>What changed</h4>
+    <table>
+      <tr><th></th><th>1.2 &mdash; raw finite difference</th><th>1.3 &mdash; smoothed first</th></tr>
+      <tr><td>Threshold needed</td><td class="num">0.20</td><td class="num">0.06</td></tr>
+      <tr><td>Grass field</td><td>speckle survives even at 0.20</td><td>fully suppressed</td></tr>
+      <tr><td>Coat outline</td><td>dotted, breaks up</td><td>one continuous stroke</td></tr>
+      <tr><td>Edge width</td><td>1px, ragged</td><td>~3px, smooth</td></tr>
+      <tr><td>Fine detail</td><td>camera knobs distinct</td><td>knobs merge together</td></tr>
+    </table>
+
+    <p>Smoothing gets us continuous, noise-free contours and pays for it in localization, where edges get thicker and nearby details merge. The threshold had to drop by more than 3&times; because blurring reduces the peak gradient at every edge. The same edges are still the strongest responses in the image, just at smaller absolute values.</p>
+
+    <h4>Folding two convolutions into one</h4>
+    <p>Because convolution is associative, <code>(I &lowast; G) &lowast; Dx = I &lowast; (G &lowast; Dx)</code>. So instead of blurring and then differentiating, I can convolve the Gaussian with the difference operator once, up front, and apply the resulting derivative-of-Gaussian filter directly to the original image.</p>
+
+    <figure class="shot">
+      <img src="media/1_3_dog.png" alt="The Gaussian kernel, the DoG X and DoG Y filters, the DoG gradient magnitude, and the DoG edge map" width="1600" height="400" loading="lazy">
+      <figcaption>The 9&times;9 Gaussian and the two DoG filters it produces, then the gradient magnitude and edge map they compute in a single pass. DoG X is a bright lobe beside a dark one, and DoG Y is bright stacked over dark.</figcaption>
+    </figure>
+
+    <p>The two routes are the same computation:</p>
+
+<pre><code>mean |difference| everywhere: 0.00129
+mean |difference| interior:   6.9e-17      &lt;- machine precision
+binary edge maps identical:   True</code></pre>
+
+    <p>In the interior of the image the two methods agree to floating-point precision, and their thresholded edge maps are bit-for-bit identical. The discrepancy is in a 10-pixel border, where blur-then-differentiate zero-pads twice, once per convolution, while the single DoG filter pads once. The two make different assumptions about what lies outside the image, so they disagree exactly where that assumption is doing the work.</p>
+
+    <h2 id="p21">Part 2.1 &middot; Image "Sharpening"</h2>
+
+    <p>A Gaussian is a low-pass filter, so <code>image - blur(image)</code> is what it threw away, which is the high frequencies. An image reads as sharper when its high frequencies are stronger, so adding a scaled copy of that residual back sharpens it:</p>
+
+<pre><code>sharpened = image + &alpha; &middot; (image - G &lowast; image)</code></pre>
+
+    <p>Distributing the convolution turns the whole thing into a single kernel, the unsharp mask, where &delta; is the unit impulse:</p>
+
+<pre><code>unsharp = (1 + &alpha;)&middot;&delta; - &alpha;&middot;G</code></pre>
+
+    <figure class="shot">
+      <img src="media/2_1_kernel.png" alt="The Gaussian kernel, the unit impulse, and the unsharp mask kernel" width="1100" height="400" loading="lazy">
+      <figcaption>The unsharp mask is one kernel, which is a tall positive spike at the centre with a shallow negative ring around it. The right panel is clipped to &plusmn;0.05 for display, because the centre tap is about 2.0 and would otherwise swamp the ring entirely.</figcaption>
+    </figure>
+
+    <p>Applying that single kernel gives the same answer as the two-step version, to machine precision:</p>
+
+<pre><code>one-kernel matches two-step (interior): 9.99e-16</code></pre>
+
+    <figure class="shot">
+      <img src="media/2_1_taj.png" alt="The Taj Mahal original, blurred, its high frequencies, and the sharpened result" width="1600" height="400" loading="lazy">
+      <figcaption>The Taj Mahal, showing the original, the low-frequency part, the high frequencies isolated by subtraction, and the sharpened result at &alpha;&nbsp;=&nbsp;1.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_1_alpha_sweep.png" alt="The Taj Mahal sharpened at alpha 0.5, 1.0, 2.0, and 4.0" width="1600" height="400" loading="lazy">
+      <figcaption>Varying the sharpening amount. At &alpha;&nbsp;=&nbsp;4 there is a bright halo ringing the dome against the sky and dark rims inside the arches.</figcaption>
+    </figure>
+
+    <p>&alpha;&nbsp;=&nbsp;0.5 is barely perceptible, 1.0 is the sweet spot, 2.0 is aggressive but still plausible, and 4.0 breaks down visibly. That failure mode is the best example of what unsharp masking actually does. It does not add detail, it exaggerates the local contrast step at every edge. Past some &alpha; you stop getting sharpness and start getting overshoot rings.</p>
+
+    <figure class="shot">
+      <img src="media/2_1_croissant.png" alt="A second photo sharpened the same way" width="1400" height="500" loading="lazy">
+      <figcaption>A second image of my own. Note how little there is in the high-frequency panel.</figcaption>
+    </figure>
+
+    <p>This one is a good counterexample to the Taj. The scene is mostly smooth surfaces, so its high-frequency panel is nearly flat grey, and what sharpening mainly amplifies is the fabric weave on the cubicle panel and the speckle on the desktop. Sharpening helps images that have real fine structure. On images that do not, it mostly amplifies noise.</p>
+
+    <h4>Blurring a sharp image and sharpening it back</h4>
+
+    <figure class="shot">
+      <img src="media/2_1_blur_resharpen.png" alt="A sharp photo, the same photo deliberately blurred, and the blurred version re-sharpened" width="1200" height="500" loading="lazy">
+      <figcaption>A sharp photo, blurred on purpose with the Gaussian, then sharpened again at &alpha;&nbsp;=&nbsp;2.</figcaption>
+    </figure>
+
+    <table>
+      <tr><th>Comparison</th><th>RMSE</th></tr>
+      <tr><td>original vs. blurred</td><td class="num">0.0471</td></tr>
+      <tr><td>original vs. re-sharpened</td><td class="num">0.0365</td></tr>
+    </table>
+
+    <p>Sharpening recovers only <b>22% of the error</b>. The global contrast does come back and the image also reads as less blurry, but the individual hair strands and the thin ceiling-tile seams do not return. They were smoothed into flat regions, and multiplying a flat region by any &alpha; leaves it flat. The Gaussian attenuated those frequencies toward zero, and unsharp masking is a linear operation, which means it can rescale what is left but not reconstruct what was zeroed out. Sharpening is not deblurring.</p>
+
+    <h2 id="p22">Part 2.2 &middot; Hybrid Images</h2>
+
+    <p>Low-pass one image, high-pass another, add them together. Up close the eye has the fine detail available, which is when the high-frequency image dominates. From a distance only the smooth content survives, and what we perceive flips.</p>
+
+    <h4>Alignment</h4>
+    <p>I used the provided <code>align_image_code.py</code>, clicking two corresponding points (both eyes, in the same order) in each image. Its <code>get_points</code> function needs a mouse, so rather than requiring six clicks on every run I recorded the returned coordinates as constants and factored the rest of <code>align_images</code> into <code>align_with_points</code>. Every other starter function like <code>recenter</code>, <code>rescale_images</code>, <code>rotate_im1</code>, and <code>match_img_size</code> is used unchanged.</p>
+
+    <figure class="shot">
+      <img src="media/2_2_alignment.png" alt="Two portrait originals and the same two images after alignment" width="1600" height="500" loading="lazy">
+      <figcaption>The two inputs before and after alignment. This pair needed only about 8&deg; of rotation and 1.1&times; scaling, so the change is subtle</figcaption>
+    </figure>
+
+    <h4>Good example, step by step</h4>
+
+    <figure class="shot">
+      <img src="media/2_2_man_toddler.png" alt="A man's face, a toddler's face, and their hybrid" width="1100" height="400" loading="lazy">
+      <figcaption>Up close the stubble, wrinkles and heavy brow win. Step back, or shrink the image, and the toddler's smile takes over.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_2_filtered_steps.png" alt="The low-passed image, the high-passed image, and the hybrid" width="1300" height="500" loading="lazy">
+      <figcaption>The two filtered components and their sum. The high-pass panel is shifted to mid grey, since it sits around zero.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_2_fft.png" alt="Log magnitude Fourier transforms of both inputs, both filtered images, and the hybrid" width="1800" height="400" loading="lazy">
+      <figcaption>Log magnitude of the 2D Fourier transform at every stage.</figcaption>
+    </figure>
+
+    <p>Both inputs have broad spectra. The low-passed image collapses to a bright core with dark corners, since only frequencies near the origin survive. The high-passed image is the exact inverse, a dark hole at the centre with energy pushed out to the periphery. And the hybrid's spectrum is visibly the union of the two, bright in the middle <em>and</em> at the edges, because it is carrying one image's low frequencies and the other's high ones simultaneously.</p>
+
+    <h4>Cutoffs</h4>
+    <p>I chose the cutoffs by rendering each hybrid at roughly 25% scale rather than judging at full size. Downscaling is what viewing from a distance physically does.</p>
+
+    <table>
+      <tr><th>Hybrid</th><th>high &sigma;</th><th>low &sigma;</th><th>gain</th><th>aligned size</th></tr>
+      <tr><td>Derek + Nutmeg</td><td class="num">2</td><td class="num">6</td><td class="num">1.5</td><td class="num">600&times;373</td></tr>
+      <tr><td>man + toddler</td><td class="num">1.5</td><td class="num">4</td><td class="num">1.5</td><td class="num">215&times;203</td></tr>
+      <tr><td>mooncake + moon</td><td class="num">1</td><td class="num">3</td><td class="num">2.2</td><td class="num">305&times;316</td></tr>
+    </table>
+
+    <p>The sigmas differ per pair because the images do. A &sigma; of 6 on a 600-pixel image and on a 200-pixel image are not the same filter in any meaningful sense, so the cutoff is only interpretable relative to image size. The <b>gain</b> column is a small deviation from the textbook formulation, where Oliva et al. simply add the two filtered images, and I scale the high-frequency component by 1.5 to 2.2 to push the close-up reading harder. I used a gain rather than raising the high &sigma; deliberately, because raising &sigma; would widen the band that survives and therefore move the cutoff, which is what I just argued for.</p>
+
+    <figure class="shot">
+      <img src="media/2_2_derek_nutmeg.png" alt="Derek, Nutmeg the cat, and their hybrid" width="1100" height="400" loading="lazy">
+      <figcaption>The provided Derek and Nutmeg pair.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_2_mooncake_moon.png" alt="A mooncake, the full moon, and their hybrid" width="1100" height="400" loading="lazy">
+      <figcaption>A mooncake and the moon. The carved relief reads as lunar surface up close. From a distance the maria and crater rays take over completely.</figcaption>
+    </figure>
+
+    <h2 id="p23">Part 2.3 &middot; Gaussian and Laplacian Stacks</h2>
+
+    <p>A stack is a pyramid without the downsampling, where every level keeps the full resolution. The Gaussian stack blurs progressively, and the Laplacian stack stores the difference between consecutive Gaussian levels, so each Laplacian level holds one band of frequencies. The final level is the leftover low-frequency residual.</p>
+
+<pre><code>def gaussian_stack(image, levels=5, sigma=2):
+    # sigma doubles each level so the blur grows like a pyramid would
+    stack = [image]
+    for i in range(levels - 1):
+        stack.append(convolve_color(stack[-1], gauss(sigma * 2 ** i), edge="symm"))
+    return stack
+
+
+def laplacian_stack(g_stack):
+    bands = [g_stack[i] - g_stack[i + 1] for i in range(len(g_stack) - 1)]
+    return bands + [g_stack[-1]]</code></pre>
+
+<pre><code>apple  stack sums back to original: True
+orange stack sums back to original: True
+every level same shape:            True</code></pre>
+
+    <p>The first two checks confirm the Laplacian levels telescope, which means summing them reconstructs the original exactly. The third is the one that distinguishes a stack from a pyramid, and it is the property the whole section exists to demonstrate.</p>
+
+    <figure class="shot">
+      <img src="media/2_3_apple_gaussian.png" alt="Five levels of the apple's Gaussian stack" width="1500" height="340" loading="lazy">
+      <figcaption>Gaussian stack of the apple. Every level is still 300&times;300.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_3_apple_laplacian.png" alt="Five levels of the apple's Laplacian stack" width="1500" height="340" loading="lazy">
+      <figcaption>Laplacian stack of the apple, each level normalised for display. L0 holds the finest texture, L1 the outline and specular highlights, L2 and L3 progressively coarser structure. L4 is the residual, which carries the colour.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_3_orange_gaussian.png" alt="Five levels of the orange's Gaussian stack" width="1500" height="340" loading="lazy">
+      <figcaption>Gaussian stack of the orange.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_3_orange_laplacian.png" alt="Five levels of the orange's Laplacian stack" width="1500" height="340" loading="lazy">
+      <figcaption>Laplacian stack of the orange. You can watch the pitted rind texture in L0 dissolve into the smooth orange disc by L4.</figcaption>
+    </figure>
+
+    <p>One note on &sigma; is that it doubles at each level rather than staying fixed. Reapplying the same &sigma;&nbsp;=&nbsp;2 kernel barely does anything, because variances add, so after <em>n</em> blurs the effective &sigma; is only 2&radic;<em>n</em> and level 4 is visually indistinguishable from level 1. Doubling reaches an effective &sigma; of 18.4 by level 4, which is what makes the coarsest level nearly featureless.</p>
+
+    <h2 id="p24">Part 2.4 &middot; Multiresolution Blending</h2>
+
+    <p>Take the Laplacian stack of each image and the <em>Gaussian</em> stack of the mask, then combine them band by band:</p>
+
+<pre><code>blended[k] = A[k] &middot; mask[k] + B[k] &middot; (1 - mask[k])</code></pre>
+
+    <p>The mask being a Gaussian stack is what works. At the finest band the mask is essentially a step, which is why texture switches abruptly. At the coarsest band the mask has been blurred into a wide ramp, where colour cross-fades slowly instead. Each frequency band is blended over a distance proportional to its own scale.</p>
+
+    <figure class="shot">
+      <img src="media/2_4_oraple.png" alt="An apple, an orange, a step mask, a naive hard paste, and the multiresolution blend" width="1800" height="400" loading="lazy">
+      <figcaption>The Oraple. The naive paste makes the case for the technique. A hard seam leaves an obvious vertical discontinuity where the rind texture and the background lighting jump.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_4_figure_3_42.png" alt="A four by three grid recreating Szeliski figure 3.42" width="1100" height="1400" loading="lazy">
+      <figcaption>Recreating Szeliski Figure 3.42 (a)&ndash;(l). Rows are Laplacian levels 0, 2 and 4 plus the all-levels total. Columns are the apple weighted by the mask, the orange weighted by its complement, and their sum.</figcaption>
+    </figure>
+
+    <p>Reading down the columns shows the mechanism directly. At L0 the mask switches abruptly, which costs nothing because the finest band carries very little energy. By L2 the transition has softened into a visible gradient. By L4 it is a wide smooth ramp. That is exactly why, in the final image, the colour transition happens gradually across the fruit while the texture transition stays sharp.</p>
+
+    <h4>Two custom blends</h4>
+    <p>Both use an irregular mask, which is a disc whose radius rides a cosine,</p>
+
+<pre><code>r(&theta;) = r&#8320; &middot; (1 + 0.25 &middot; cos 8&theta;)</code></pre>
+
+    <figure class="shot">
+      <img src="media/2_4_tigerleopard.png" alt="A tiger, a leopard, the petal mask, a naive paste, and the multiresolution blend" width="1800" height="400" loading="lazy">
+      <figcaption>Tiger inside, leopard outside, r&#8320;&nbsp;=&nbsp;0.40. The naive paste shows the outline as a hard edge with the tiger's ears floating on the leopard's head. The blended version has no seam at all, and spots dissolve into stripes across the cheeks.</figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="media/2_4_daisylily.png" alt="A daisy, a lily, the petal mask, a naive paste, and the multiresolution blend" width="1800" height="400" loading="lazy">
+      <figcaption>Daisy inside, lily outside, r&#8320;&nbsp;=&nbsp;0.26. The result looks like a single flower with a daisy centre and inner white petals opening into pink lily petals at the rim.</figcaption>
+    </figure>
+
+    <p>I picked this mask because it kind fits the roundish images I chose. On the flowers, the eight lobes follow petal structure, so the seam runs along the natural pattern instead of cutting across it, which is why the blend comes out as one flower rather than two pasted together. On the cats, the same shape frames the face in a soft rosette instead of a sharp or distinct circle.</p>
+
+    <p>The only per-pair difference is the radius. I swept r&#8320; at 0.26, 0.32 and 0.40 on the flowers. At 0.40 the daisy fills the frame and the lily disappears entirely, leaving nothing to blend. The cats need the larger radius for the opposite reason, since the mask has to be big enough to contain the tiger's whole face.</p>
+
+    <div class="takeaway" id="learned">
+      <h3>What I learned</h3>
+      <p>What was interesting about this project is that all of these seven sections are basically one operation wearing a different hat. The associativity of convolution kept turning two steps into one. For example, blur-then-differentiate collapsed into a single DoG kernel and agreed to 6.9e-17, while blur-subtract-scale-add collapsed into a single unsharp mask and agreed to 9.99e-16. They are the same computation reorganised, and checking them numerically rather than eyeballing them is verified this to be the case.</p>
+      <p>Another thing I did not expect is how much of the work is not the filtering. The hybrid images would either work or not depending on whether two eyes landed within a few pixels of each other. My first attempts failed because I had estimated the eye coordinates badly, not because the math was wrong, which took me a while to realize. Similarly, the boundary condition, which was mentioned in Part 1.1, was actually a real decision by Part 2.3, where zero-padding a 97&times;97 kernel would have ruined every blend. The filter is the easy part. What you feed the filter and what you assume beyond its edges is what the results are dependent on.</p>
+    </div>
+  </main>
+
+  <footer>
+    <a href="https://github.com/0308ehub/0308ehub.github.io">Source on GitHub</a>
+  </footer>
+</body>
+</html>
