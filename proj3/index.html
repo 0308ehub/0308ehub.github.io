@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project 3: Flow Models · CS180</title>
+  <meta name="description" content="CS180 Project 3: sampling and editing with a pretrained flow model, and training flow-matching models on MNIST.">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+    p code, li code {
+      background: rgba(127, 127, 127, .12);
+      padding: .1em .35em;
+      border-radius: 3px;
+    }
+
+    .shot { margin: 1.5rem 0 2rem; }
+    .shot img {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      width: 100%;
+    }
+    .shot figcaption { margin-top: .6rem; }
+    figure a { display: block; }
+
+    h4 {
+      font-family: var(--sans);
+      font-size: .8rem;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 1.75rem 0 .5rem;
+    }
+
+    /* --- project 3 additions --- */
+    .part {
+      font-size: 2rem;
+      border-top: 1px solid var(--line);
+      padding-top: 2rem;
+      margin-top: 3.5rem;
+    }
+    .shot.mid { max-width: 620px; }
+    .shot.narrow { max-width: 280px; }
+    .shot.tall { max-width: 420px; margin-left: auto; margin-right: auto; }
+    .pix {
+      width: 128px !important;
+      image-rendering: pixelated;
+      border: 1px solid var(--line);
+    }
+    .quad {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin: 1.5rem 0 2rem;
+    }
+    .quad figure { margin: 0; }
+    .quad img { border: 1px solid var(--line); border-radius: 4px; }
+    @media (max-width: 700px) {
+      .quad { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media print {
+      body { max-width: none; padding: 0; background: #fff; color: #000; }
+      .back { display: none; }
+      figure, .pair, .quad { break-inside: avoid; }
+      h2, h4 { break-after: avoid; }
+      a { color: inherit; text-decoration: none; }
+      .part { break-before: page; }
+      .shot.tall { max-width: 270px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="back" href="../">&larr; all projects</a>
+
+  <header>
+    <p class="tag">Programming Project #3</p>
+    <h1>Flow Models</h1>
+    <p class="sub">CS180: Intro to Computer Vision and Computational Photography</p>
+  </header>
+
+  <main>
+    <p class="lede">In Part A of this project, I used a pretrained text-to-image flow model to add noise to images, remove noise from images, generate images from scratch, and edit images. I also made visual anagrams and hybrid images. In the second half of this project, Part B, I trained UNets on MNIST: first a one-step denoiser, then time- and class-conditioned flow matching models that generate digits from noise.</p>
+
+
+    <h2 class="part" id="part-a">Part A &middot; Exploring the Power of Flow Models</h2>
+
+    <p>Unless specified, I used seed 180, Euler step size <code>h = 0.02</code>, the text prompt <code>"a high quality photo"</code>, and CFG weight <code>w = 7</code> wherever guidance is on. For Sections 1.1&ndash;1.5 I used my own photo of a pink flower.</p>
+
+    <h2 id="a-1-1">Part A 1.1 &middot; Constructing Noisy Training Inputs</h2>
+    <p>I sampled one noise tensor and mixed it with the photo at three times, using <code>interpolate(image, noise, t)</code>.</p>
+    <figure class="shot">
+      <a href="media/a1_1_noisy_inputs.png"><img src="media/a1_1_noisy_inputs.png" alt="The flower photo next to noisy versions at t = 0.25, 0.5 and 0.75, getting clearer as t increases" width="1593" height="411" loading="lazy"></a>
+      <figcaption>Original, then x<sub>t</sub> at <b>t = 0.25, 0.50, 0.75</b>.</figcaption>
+    </figure>
+
+    <h2 id="a-1-2">Part A 1.2 &middot; Classical Denoising</h2>
+    <p>To set a baseline that uses no learning, I first divided each noisy input by t in order to restore the image's amplitude, then applied a Gaussian blur. I tried &sigma; &isin; {1, 2, 4, 8, 16} and kept the result with the lowest MSE to the clean photo.</p>
+    <figure class="shot mid">
+      <a href="media/a1_2_blur_t025.png"><img src="media/a1_2_blur_t025.png" alt="Noisy flower at t = 0.25 and its Gaussian-blurred estimate with sigma 8" width="793" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.25</b>, best &sigma; = 8.</figcaption>
+    </figure>
+    <figure class="shot mid">
+      <a href="media/a1_2_blur_t050.png"><img src="media/a1_2_blur_t050.png" alt="Noisy flower at t = 0.5 and its Gaussian-blurred estimate with sigma 4" width="793" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.50</b>, best &sigma; = 4.</figcaption>
+    </figure>
+    <figure class="shot mid">
+      <a href="media/a1_2_blur_t075.png"><img src="media/a1_2_blur_t075.png" alt="Noisy flower at t = 0.75 and its Gaussian-blurred estimate with sigma 2" width="793" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.75</b>, best &sigma; = 2.</figcaption>
+    </figure>
+
+    <h2 id="a-1-3">Part A 1.3 &middot; One-Step Denoising</h2>
+    <p>A single model call estimates the clean image: <code>x&#770;_1 = x_t + (1 &minus; t)&middot;v_&theta;(x_t, t, c)</code>.</p>
+    <figure class="shot">
+      <a href="media/a1_3_onestep_t025.png"><img src="media/a1_3_onestep_t025.png" alt="Original, noisy at t = 0.25, and one-step denoised flower" width="1193" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.25</b>: original, noisy input, one-step estimate.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a1_3_onestep_t050.png"><img src="media/a1_3_onestep_t050.png" alt="Original, noisy at t = 0.5, and one-step denoised flower" width="1193" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.50</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a1_3_onestep_t075.png"><img src="media/a1_3_onestep_t075.png" alt="Original, noisy at t = 0.75, and one-step denoised flower" width="1193" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.75</b>.</figcaption>
+    </figure>
+
+    <h2 id="a-1-4">Part A 1.4 &middot; Visualizing Velocity</h2>
+    <p>For each time: the noisy image, the predicted update <code>(1&minus;t)&middot;v&#770;</code>, the ground-truth update <code>x_1 &minus; x_t</code>, and the per-pixel RMS error over RGB.</p>
+    <figure class="shot narrow">
+      <a href="media/a1_4_original.png"><img src="media/a1_4_original.png" alt="Original flower photo" width="512" height="512" loading="lazy"></a>
+      <figcaption>Original image.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a1_4_velocity_t025.png"><img src="media/a1_4_velocity_t025.png" alt="At t = 0.25: noisy image, predicted update, ground-truth update, and RMS error heatmap" width="1558" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.25</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a1_4_velocity_t050.png"><img src="media/a1_4_velocity_t050.png" alt="At t = 0.5: noisy image, predicted update, ground-truth update, and RMS error heatmap" width="1558" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.50</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a1_4_velocity_t075.png"><img src="media/a1_4_velocity_t075.png" alt="At t = 0.75: noisy image, predicted update, ground-truth update, and RMS error heatmap" width="1558" height="411" loading="lazy"></a>
+      <figcaption><b>t = 0.75</b>.</figcaption>
+    </figure>
+
+    <h2 id="a-1-5">Part A 1.5 &middot; Iterative Denoising with Euler Sampling</h2>
+    <p>25 Euler updates from the t = 0.5 input with h = 0.02.</p>
+    <figure class="shot tall">
+      <a href="media/a1_5_trajectory.png"><img src="media/a1_5_trajectory.png" alt="Grid of all 26 saved Euler states from t = 0.50 to t = 1.00 in steps of 0.02, the flower getting progressively cleaner" width="1202" height="3611" loading="lazy"></a>
+      <figcaption>Every state from <b>t = 0.50 to 1.00</b> in steps of 0.02.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a1_5_comparison.png"><img src="media/a1_5_comparison.png" alt="Original flower compared with Gaussian blur, one-step, and Euler results from the t = 0.5 input" width="1593" height="411" loading="lazy"></a>
+      <figcaption>Same t = 0.5 input: original, Gaussian blur, one step, Euler.</figcaption>
+    </figure>
+    <p>Both model-based results are much better than the blur. The one-step result is smoother than the original, but the Euler result is a little crisper.</p>
+
+    <h2 id="a-1-6">Part A 1.6 &middot; Generating Images from Noise</h2>
+    <p>Starting from pure noise at t = 0, I took 50 Euler steps with the prompt <code>"a high quality photo"</code> and no guidance, using five seeds.</p>
+    <figure class="shot">
+      <a href="media/a1_6_samples.png"><img src="media/a1_6_samples.png" alt="Five generated images for seeds 180 to 184, all portraits of people, several with distorted faces" width="1602" height="811" loading="lazy"></a>
+      <figcaption>Seeds <b>180&ndash;184</b>, no CFG.</figcaption>
+    </figure>
+    <p>We see that all five came out as portraits of people, but several are broken/twisted in weird ways. For instance, the face at seed 180 is smeared and missing features, the face at seed 183 is also badly deformed while the torso at seed 181 just looks wrong. Seeds 182 and 184 are relatively reasonable.</p>
+
+    <h2 id="a-2-1">Part A 2.1 &middot; Classifier-Free Guidance</h2>
+    <p>The same five seeds as in 1.6, with CFG at <code>w = 7</code>.</p>
+    <figure class="shot">
+      <a href="media/a2_1_cfg_samples.png"><img src="media/a2_1_cfg_samples.png" alt="Five CFG samples for seeds 180 to 184, all coherent front-facing studio portraits" width="1602" height="811" loading="lazy"></a>
+      <figcaption>Seeds <b>180&ndash;184</b>, <b>w = 7</b>.</figcaption>
+    </figure>
+    <p>The images are coherent with guidance, with all five of the images being front-facing head-and-shoulders portraits with clean faces. They are also more alike than the 1.6 samples, with similar framing and plain studio backgrounds. Thus, CFG trades a bit of variety for quality.</p>
+
+    <h2 id="a-3-1">Part A 3.1 &middot; Image-to-Image Editing</h2>
+    <p>Prompt <code>"a high quality photo"</code>. Each panel shows the original image followed by <b>t_start = 0.02, 0.04, 0.06, 0.10, 0.14, 0.25, 0.50</b>.</p>
+
+    <h4>Campanile</h4>
+    <figure class="shot">
+      <a href="media/a3_1_campanile.png"><img src="media/a3_1_campanile.png" alt="Campanile original and seven edits; low start times give a plain white tower, higher ones restore the belfry and clock" width="1593" height="811" loading="lazy"></a>
+    </figure>
+
+    <h4>My image 1: flower</h4>
+    <figure class="shot">
+      <a href="media/a3_1_my_image_1.png"><img src="media/a3_1_my_image_1.png" alt="Flower photo original and seven edits; early times become portraits and a device on a table, later times return to the flower" width="1593" height="811" loading="lazy"></a>
+    </figure>
+
+    <h4>My image 2: portrait</h4>
+    <figure class="shot">
+      <a href="media/a3_1_my_image_2.png"><img src="media/a3_1_my_image_2.png" alt="Sideways portrait with a watermelon plate, and seven edits; early times become different people, later times restore the pose and plate" width="1593" height="811" loading="lazy"></a>
+    </figure>
+
+    <h4>Web image: white flower</h4>
+    <figure class="shot">
+      <a href="media/a3_1_web_image.png"><img src="media/a3_1_web_image.png" alt="White flower from the web and seven edits; 0.02 becomes a hand holding a tablet, later times are white flowers" width="1593" height="811" loading="lazy"></a>
+    </figure>
+
+    <h4>My drawing 1: house</h4>
+    <figure class="shot">
+      <a href="media/a3_1_drawing_1.png"><img src="media/a3_1_drawing_1.png" alt="Hand-drawn house and seven edits; early times become white boxes with fake lettering, from 0.10 the drawing is reproduced" width="1593" height="811" loading="lazy"></a>
+    </figure>
+
+    <h4>My drawing 2: flower</h4>
+    <figure class="shot">
+      <a href="media/a3_1_drawing_2.png"><img src="media/a3_1_drawing_2.png" alt="Hand-drawn flower and seven edits; 0.02 is a white box, 0.04 a boxy object, from 0.06 the drawing" width="1593" height="811" loading="lazy"></a>
+    </figure>
+
+    <h2 id="a-3-2">Part A 3.2 &middot; Text-Guided Image Editing</h2>
+    <p>Same seven starting times, with a different prompt for each image.</p>
+    <figure class="shot">
+      <a href="media/a3_2_campanile_rocket.png"><img src="media/a3_2_campanile_rocket.png" alt="Campanile edited toward a rocket on a launch pad at seven start times" width="1580" height="811" loading="lazy"></a>
+      <figcaption><b>Campanile</b>, prompt <b>"a photograph of a rocket on a launch pad"</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a3_2_my_image_1_castle.png"><img src="media/a3_2_my_image_1_castle.png" alt="Flower photo edited toward a painting of a castle at seven start times" width="1580" height="811" loading="lazy"></a>
+      <figcaption><b>My image 1</b>, prompt <b>"a painting of a castle"</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/a3_2_my_image_2_mountain.png"><img src="media/a3_2_my_image_2_mountain.png" alt="Portrait edited toward a snowy mountain at seven start times" width="1580" height="811" loading="lazy"></a>
+      <figcaption><b>My image 2</b>, prompt <b>"a photograph of a snowy mountain"</b>.</figcaption>
+    </figure>
+
+    <h2 id="a-3-3">Part A 3.3 &middot; Visual Anagrams</h2>
+    <p>Each image reads as the first prompt upright and as the second prompt when rotated 180&deg;.</p>
+    <figure class="shot mid">
+      <a href="media/a3_3_oldman_campfire.png"><img src="media/a3_3_oldman_campfire.png" alt="Left: upright view reading as an old man; right: the same image rotated 180 degrees reading as people around a campfire" width="793" height="411" loading="lazy"></a>
+      <figcaption><b>Upright:</b> "an oil painting of an old man". <b>Rotated 180&deg;:</b> "an oil painting of people around a campfire".</figcaption>
+    </figure>
+    <figure class="shot mid">
+      <a href="media/a3_3_village_horse.png"><img src="media/a3_3_village_horse.png" alt="Left: upright view of a snowy mountain village; right: the same image rotated 180 degrees showing a horse" width="793" height="411" loading="lazy"></a>
+      <figcaption><b>Upright:</b> "a lithograph of a snowy mountain village". <b>Rotated 180&deg;:</b> "a lithograph of a horse".</figcaption>
+    </figure>
+
+    <h2 id="a-3-4">Part A 3.4 &middot; Hybrid Images</h2>
+    <p>Each hybrid is shown at full sizeand at 64&times;64 (distant prompt).</p>
+
+    <h4>Skull / waterfall</h4>
+    <div class="pair">
+      <figure>
+        <a href="media/a3_4_skull_waterfall_full.png"><img src="media/a3_4_skull_waterfall_full.png" alt="Full-size lithograph of a waterfall cascading over dark rocks" width="512" height="512" loading="lazy"></a>
+        <figcaption><b>Close:</b> "a lithograph of a waterfall".</figcaption>
+      </figure>
+      <figure>
+        <img class="pix" src="media/a3_4_skull_waterfall_64.png" alt="The same image at 64 by 64 pixels" width="64" height="64" loading="lazy">
+        <figcaption><b>Distant (64&times;64):</b> "a lithograph of a skull".</figcaption>
+      </figure>
+    </div>
+
+    <h4>Cat / forest</h4>
+    <div class="pair">
+      <figure>
+        <a href="media/a3_4_cat_forest_full.png"><img src="media/a3_4_cat_forest_full.png" alt="Full-size lithograph of a forest of tall tree trunks" width="512" height="512" loading="lazy"></a>
+        <figcaption><b>Close:</b> "a lithograph of a forest".</figcaption>
+      </figure>
+      <figure>
+        <img class="pix" src="media/a3_4_cat_forest_64.png" alt="The same image at 64 by 64 pixels" width="64" height="64" loading="lazy">
+        <figcaption><b>Distant (64&times;64):</b> "a lithograph of a cat".</figcaption>
+      </figure>
+    </div>
+
+    <h2 class="part" id="part-b">Part B &middot; Flow Matching from Scratch</h2>
+
+    <h2 id="b-1-1">Part B 1.1 &middot; Implementing the UNet</h2>
+    <p>I implemented the unconditional UNet with skip connections at each resolution.</p>
+
+    <h2 id="b-1-2">Part B 1.2 &middot; Using the UNet to Train a Denoiser</h2>
+    <figure class="shot">
+      <a href="media/b1_2_noise_levels.png"><img src="media/b1_2_noise_levels.png" alt="An MNIST 7 with Gaussian noise at sigma 0, 0.2, 0.4, 0.5, 0.6, 0.8 and 1.0" width="1043" height="196" loading="lazy"></a>
+      <figcaption>Noising process, left to right: <b>&sigma; = 0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0</b>.</figcaption>
+    </figure>
+
+    <h2 id="b-1-2-1">Part B 1.2.1 &middot; Training</h2>
+    <figure class="shot">
+      <a href="media/b1_2_1_loss.png"><img src="media/b1_2_1_loss.png" alt="Training loss curve for the sigma 0.5 denoiser, dropping sharply then flattening" width="788" height="290" loading="lazy"></a>
+      <figcaption>Training loss, &sigma; = 0.5.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/b1_2_1_epoch1.png"><img src="media/b1_2_1_epoch1.png" alt="Sixteen test digits after epoch 1: clean, noisy, and denoised rows" width="1189" height="265" loading="lazy"></a>
+      <figcaption><b>Epoch 1.</b> Rows: clean, noisy (&sigma; = 0.5), denoised.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/b1_2_1_epoch5.png"><img src="media/b1_2_1_epoch5.png" alt="Sixteen test digits after epoch 5: clean, noisy, and denoised rows" width="1189" height="265" loading="lazy"></a>
+      <figcaption><b>Epoch 5.</b></figcaption>
+    </figure>
+
+    <h2 id="b-1-2-2">Part B 1.2.2 &middot; Out-of-Distribution Testing</h2>
+    <figure class="shot">
+      <a href="media/b1_2_2_ood.png"><img src="media/b1_2_2_ood.png" alt="Top row: a 7 with noise from sigma 0 to 1.0; bottom row: denoised outputs, clean until 0.6 and garbled at 1.0" width="627" height="219" loading="lazy"></a>
+      <figcaption>Top: noisy inputs at <b>&sigma; = 0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0</b>. Bottom: denoiser output.</figcaption>
+    </figure>
+
+    <h2 id="b-1-2-3">Part B 1.2.3 &middot; Denoising Pure Noise</h2>
+    <figure class="shot">
+      <a href="media/b1_2_3_loss.png"><img src="media/b1_2_3_loss.png" alt="Training loss for the pure-noise model, dropping quickly then flat at a high plateau" width="779" height="290" loading="lazy"></a>
+      <figcaption>Training loss.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure>
+        <a href="media/b1_2_3_epoch1.png"><img src="media/b1_2_3_epoch1.png" alt="Sixteen outputs after epoch 1, all the same blurry digit-like blob" width="713" height="219" loading="lazy"></a>
+        <figcaption><b>Epoch 1</b>.</figcaption>
+      </figure>
+      <figure>
+        <a href="media/b1_2_3_epoch5.png"><img src="media/b1_2_3_epoch5.png" alt="Sixteen outputs after epoch 5, all the same blurry digit-like blob" width="713" height="219" loading="lazy"></a>
+        <figcaption><b>Epoch 5</b>.</figcaption>
+      </figure>
+    </div>
+    <p>Every output we get is the same blurry gray figure, which kind of looks like several digits overlaid. As the input has no information about the target, the prediction that minimises MSE is just the average of our training digits. Thus, the network learns to output a single average image.</p>
+
+    <h2 id="b-2-1">Part B 2.1 &middot; Adding Time Conditioning to UNet</h2>
+    <p>As instructed, I added time conditioning to the UNet with two <code>FCBlock</code>s.</p>
+
+    <h2 id="b-2-2">Part B 2.2 &middot; Training the Time-Conditioned UNet</h2>
+    <figure class="shot">
+      <a href="media/b2_2_loss.png"><img src="media/b2_2_loss.png" alt="Training loss for the time-conditioned UNet with one large spike at the start, then low and flat" width="790" height="290" loading="lazy"></a>
+      <figcaption>Training loss.</figcaption>
+    </figure>
+
+    <h2 id="b-2-3">Part B 2.3 &middot; Sampling from the Time-Conditioned UNet</h2>
+    <figure class="shot">
+      <a href="media/b2_3_epoch1.png"><img src="media/b2_3_epoch1.png" alt="Sixteen samples after epoch 1, mostly broken stroke fragments" width="713" height="219" loading="lazy"></a>
+      <figcaption><b>Epoch 1</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/b2_3_epoch5.png"><img src="media/b2_3_epoch5.png" alt="Sixteen samples after epoch 5, some recognisable digits and some malformed" width="713" height="219" loading="lazy"></a>
+      <figcaption><b>Epoch 5</b>.</figcaption>
+    </figure>
+    <figure class="shot">
+      <a href="media/b2_3_epoch10.png"><img src="media/b2_3_epoch10.png" alt="Sixteen samples after epoch 10, mostly connected digit-like strokes" width="713" height="219" loading="lazy"></a>
+      <figcaption><b>Epoch 10</b>.</figcaption>
+    </figure>
+
+    <h2 id="b-2-4">Part B 2.4 &middot; Adding Class-Conditioning to UNet</h2>
+    <p>I added two more <code>FCBlock</code>s for a one-hot class vector, which is dropped 10% of the time during training.</p>
+
+    <h2 id="b-2-5">Part B 2.5 &middot; Training the Class-Conditioned UNet</h2>
+    <div class="pair">
+      <figure>
+        <a href="media/b2_5_loss_scheduled.png"><img src="media/b2_5_loss_scheduled.png" alt="Training loss for the scheduled class-conditioned run" width="790" height="290" loading="lazy"></a>
+        <figcaption>Training loss, <b>with scheduler</b>.</figcaption>
+      </figure>
+      <figure>
+        <a href="media/b2_5_loss_constant.png"><img src="media/b2_5_loss_constant.png" alt="Training loss for the constant learning rate class-conditioned run" width="790" height="290" loading="lazy"></a>
+        <figcaption>Training loss, <b>no scheduler</b> (constant lr 1e-3).</figcaption>
+      </figure>
+    </div>
+
+    <h2 id="b-2-6">Part B 2.6 &middot; Sampling from the Class-Conditioned UNet</h2>
+    <p>Each grid has four instances of each digit, 0 at the top to 9 at the bottom.</p>
+    <div class="quad">
+      <figure>
+        <a href="media/b2_6_scheduled_epoch1.png"><img src="media/b2_6_scheduled_epoch1.png" alt="Scheduled model epoch 1: ten rows of four digits 0 to 9, correct classes but speckled strokes" width="463" height="1139" loading="lazy"></a>
+        <figcaption><b>Epoch 1</b></figcaption>
+      </figure>
+      <figure>
+        <a href="media/b2_6_scheduled_epoch5.png"><img src="media/b2_6_scheduled_epoch5.png" alt="Scheduled model epoch 5: ten rows of four clean digits 0 to 9" width="463" height="1139" loading="lazy"></a>
+        <figcaption><b>Epoch 5</b></figcaption>
+      </figure>
+      <figure>
+        <a href="media/b2_6_scheduled_epoch10.png"><img src="media/b2_6_scheduled_epoch10.png" alt="Scheduled model epoch 10: ten rows of four clean digits 0 to 9" width="463" height="1139" loading="lazy"></a>
+        <figcaption><b>Epoch 10</b></figcaption>
+      </figure>
+      <figure>
+        <a href="media/b2_6_constant_epoch10.png"><img src="media/b2_6_constant_epoch10.png" alt="No-scheduler model epoch 10: ten rows of four clean digits 0 to 9" width="463" height="1139" loading="lazy"></a>
+        <figcaption><b>No scheduler, epoch 10</b></figcaption>
+      </figure>
+    </div>
+    <p>In order to compensate for removing the exponential learning rate scheduler, I trained using 1e-3 as the constant learning rate instead of starting at 1e-2, as a high learning rate that never decays would make the updates too large. After running for 10 epochs, the samples we get are comparable to the scheduled model in quality.</p>
+
+  </main>
+
+  <footer>
+    <a href="https://github.com/0308ehub/0308ehub.github.io">Source on GitHub</a>
+  </footer>
+</body>
+</html>
