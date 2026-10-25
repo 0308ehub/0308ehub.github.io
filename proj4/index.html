@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project 4A: Image Warping and Mosaicing · CS180</title>
+  <meta name="description" content="CS180 Project 4A: recovering homographies, rectifying images with inverse warping, and blending photo mosaics.">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+    p code, li code {
+      background: rgba(127, 127, 127, .12);
+      padding: .1em .35em;
+      border-radius: 3px;
+    }
+    pre {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .85rem;
+      background: rgba(127, 127, 127, .08);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: .75rem 1rem;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+
+    .shot { margin: 1.5rem 0 2rem; }
+    .shot img {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      width: 100%;
+    }
+    .shot.narrow { max-width: 360px; }
+    figure a { display: block; }
+
+    h3 {
+      font-family: var(--serif);
+      font-size: 1.15rem;
+      margin: 2rem 0 .5rem;
+    }
+    h4 {
+      font-family: var(--sans);
+      font-size: .8rem;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 1.75rem 0 .5rem;
+    }
+
+    .part {
+      font-size: 2rem;
+      border-top: 1px solid var(--line);
+      padding-top: 2rem;
+      margin-top: 3.5rem;
+    }
+    .pair.rect { grid-template-columns: repeat(auto-fit, minmax(200px, 300px)); }
+
+    table {
+      border-collapse: collapse;
+      font-size: .9rem;
+      margin: 1.25rem 0 2rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: .4rem .9rem .4rem 0;
+      text-align: left;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    td.num { font-variant-numeric: tabular-nums; }
+
+    @media print {
+      body { max-width: none; padding: 0; background: #fff; color: #000; }
+      .back { display: none; }
+      figure, .pair, pre, table { break-inside: avoid; }
+      h2, h3, h4 { break-after: avoid; }
+      a { color: inherit; text-decoration: none; }
+      .part { break-before: page; }
+      #a-1 { break-before: auto; }
+    }
+  </style>
+</head>
+<body>
+  <a class="back" href="../">&larr; all projects</a>
+
+  <header>
+    <p class="tag">Programming Project #4</p>
+    <h1>Image Warping and Mosaicing</h1>
+    <p class="sub">CS180: Intro to Computer Vision and Computational Photography &middot; Part A</p>
+  </header>
+
+  <main>
+    <p class="lede">In this project, I recovered homographies between photos, used them to rectify two angled signs, and stitched three pairs of photos into mosaics. The homography solver, the inverse warping, both interpolation methods, and the blending are all implemented by hand in NumPy.</p>
+
+
+    <h2 class="part" id="a-1">A.1 &middot; Shoot the Pictures</h2>
+    <p>For each mosaic I took two overlapping photos from one spot and rotated the camera between them, so that the two views share approximately the same center of projection and are related by a homography.</p>
+
+    <h3>Scene 1 &middot; Locker hallway</h3>
+    <div class="pair">
+      <figure><a href="media/scene1_left.jpg"><img src="media/scene1_left.jpg" alt="Locker wall with an extinguisher cabinet and doors along a hallway" width="1000" height="750" loading="lazy"></a><figcaption><b>Left</b></figcaption></figure>
+      <figure><a href="media/scene1_right.jpg"><img src="media/scene1_right.jpg" alt="The same hallway turned to the right, with a pillar and directory sign" width="1000" height="750" loading="lazy"></a><figcaption><b>Right</b></figcaption></figure>
+    </div>
+
+    <h3>Scene 2 &middot; Bulletin-board hallway</h3>
+    <div class="pair">
+      <figure><a href="media/scene2_left.jpg"><img src="media/scene2_left.jpg" alt="Open room with cork bulletin boards and a doorway on the left" width="1000" height="750" loading="lazy"></a><figcaption><b>Left</b></figcaption></figure>
+      <figure><a href="media/scene2_right.jpg"><img src="media/scene2_right.jpg" alt="The same room turned to the right, showing a large mural" width="1000" height="750" loading="lazy"></a><figcaption><b>Right</b></figcaption></figure>
+    </div>
+
+    <h3>Scene 3 &middot; Exterior building</h3>
+    <div class="pair">
+      <figure><a href="media/scene3_left.jpg"><img src="media/scene3_left.jpg" alt="Corner of a glass-fronted building with balconies" width="1000" height="750" loading="lazy"></a><figcaption><b>Left</b></figcaption></figure>
+      <figure><a href="media/scene3_right.jpg"><img src="media/scene3_right.jpg" alt="The building facade continuing right, with picnic tables and a plaza" width="1000" height="750" loading="lazy"></a><figcaption><b>Right</b></figcaption></figure>
+    </div>
+
+
+    <h2 class="part" id="a-2">A.2 &middot; Recover Homographies</h2>
+    <p>A homography maps a point (x, y) to (u, v) up to a scale w:</p>
+<pre>
+[w&middot;u]   [a b c] [x]
+[w&middot;v] = [d e f] [y]
+[ w ]   [g h 1] [1]
+</pre>
+    <p>Fixing the bottom-right entry to 1 leaves eight unknowns. Substituting w = gx + hy + 1 and rearranging gives two linear equations per correspondence:</p>
+<pre>
+[x y 1 0 0 0 -u&middot;x -u&middot;y] [a b c d e f g h]&#7488; = u
+[0 0 0 x y 1 -v&middot;x -v&middot;y] [a b c d e f g h]&#7488; = v
+</pre>
+    <p><code>computeH(im1_pts, im2_pts)</code> stacks these two rows for every correspondence into a system <code>A h = b</code>. Four correspondences determine h exactly. With more than four, the system is overdetermined, so I solve it in the least-squares sense with <code>np.linalg.lstsq</code>, append the fixed 1, and reshape h into the 3&times;3 matrix H.</p>
+
+    <h4>Finding the correspondences</h4>
+    <p>Instead of clicking points by hand, I used OpenCV only to detect SIFT keypoints and compute their descriptors, matched the descriptors, and kept the matches that passed Lowe's ratio test (0.8). Many of these candidates are still wrong, so as a robustness step I wrote my own RANSAC: 3000 times, pick 4 random matches, fit H with <code>computeH</code>, and count how many matches land within 3 pixels of where H predicts. I keep the largest consistent set, then recompute the final H from all of those inliers with the same least-squares <code>computeH</code>. Matching runs on the full-resolution photos. The points are then scaled by 0.5, and all warping is done at half resolution (1024&times;768).</p>
+
+    <table>
+      <thead>
+        <tr><th>Mosaic</th><th>Candidate matches</th><th>RANSAC inliers</th><th>Mean error (px)</th><th>Median error (px)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td class="num">437</td><td class="num">237</td><td class="num">0.65</td><td class="num">0.52</td></tr>
+        <tr><td>2</td><td class="num">1785</td><td class="num">1514</td><td class="num">0.68</td><td class="num">0.58</td></tr>
+        <tr><td>3</td><td class="num">503</td><td class="num">38</td><td class="num">0.84</td><td class="num">0.73</td></tr>
+      </tbody>
+    </table>
+    <p>Scene 3 keeps only 38 of 503 matches because the glass facade and the railing repeat, so many descriptor matches pair up the wrong window or post. The 38 inliers that remain all agree to within a pixel.</p>
+
+    <h3>Mosaic 1 correspondences</h3>
+    <figure class="shot">
+      <a href="media/mosaic1_matches.jpg"><img src="media/mosaic1_matches.jpg" alt="Lines connecting matched points between the two locker hallway photos" width="774" height="309" loading="lazy"></a>
+      <figcaption>RANSAC inliers, left image on the left.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure><a href="media/mosaic1_left_points.jpg"><img src="media/mosaic1_left_points.jpg" alt="Numbered inlier points on the left locker photo" width="769" height="584" loading="lazy"></a><figcaption><b>Left</b> points</figcaption></figure>
+      <figure><a href="media/mosaic1_right_points.jpg"><img src="media/mosaic1_right_points.jpg" alt="Numbered inlier points on the right locker photo" width="769" height="584" loading="lazy"></a><figcaption><b>Right</b> points</figcaption></figure>
+    </div>
+<pre>
+H1 (right &rarr; left) =
+[[ 1.32435e-01 -4.61392e-02  3.59184e+02]
+ [-3.19101e-01  6.13121e-01  1.49874e+02]
+ [-8.38644e-04 -6.46916e-05  1.00000e+00]]
+</pre>
+
+    <h3>Mosaic 2 correspondences</h3>
+    <figure class="shot">
+      <a href="media/mosaic2_matches.jpg"><img src="media/mosaic2_matches.jpg" alt="Lines connecting matched points between the two bulletin-board photos" width="774" height="309" loading="lazy"></a>
+      <figcaption>RANSAC inliers, left image on the left.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure><a href="media/mosaic2_left_points.jpg"><img src="media/mosaic2_left_points.jpg" alt="Inlier points on the left bulletin-board photo" width="769" height="584" loading="lazy"></a><figcaption><b>Left</b> points (1514 inliers, so they are not numbered)</figcaption></figure>
+      <figure><a href="media/mosaic2_right_points.jpg"><img src="media/mosaic2_right_points.jpg" alt="Inlier points on the right bulletin-board photo" width="769" height="584" loading="lazy"></a><figcaption><b>Right</b> points</figcaption></figure>
+    </div>
+<pre>
+H2 (right &rarr; left) =
+[[ 3.33057e-01 -2.24869e-02  5.50183e+02]
+ [-2.44792e-01  8.11472e-01  8.32626e+01]
+ [-6.40562e-04 -3.20506e-05  1.00000e+00]]
+</pre>
+
+    <h3>Mosaic 3 correspondences</h3>
+    <figure class="shot">
+      <a href="media/mosaic3_matches.jpg"><img src="media/mosaic3_matches.jpg" alt="Lines connecting matched points between the two building photos" width="774" height="309" loading="lazy"></a>
+      <figcaption>RANSAC inliers, left image on the left.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure><a href="media/mosaic3_left_points.jpg"><img src="media/mosaic3_left_points.jpg" alt="Numbered inlier points on the left building photo" width="769" height="584" loading="lazy"></a><figcaption><b>Left</b> points</figcaption></figure>
+      <figure><a href="media/mosaic3_right_points.jpg"><img src="media/mosaic3_right_points.jpg" alt="Numbered inlier points on the right building photo" width="769" height="584" loading="lazy"></a><figcaption><b>Right</b> points</figcaption></figure>
+    </div>
+<pre>
+H3 (right &rarr; left) =
+[[ 1.81095e-01  9.43787e-03  6.18670e+02]
+ [-3.89396e-01  7.91960e-01  1.01876e+02]
+ [-7.78849e-04 -1.05536e-04  1.00000e+00]]
+</pre>
+
+
+    <h2 class="part" id="a-3">A.3 &middot; Warp the Images</h2>
+    <p>Both warps use inverse warping. I project the four corners of the input through H to find the output bounding box. Then, for every output pixel (x&prime;, y&prime;), I compute its source location (x, y) = H<sup>&minus;1</sup>(x&prime;, y&prime;) and sample the input there. Output pixels whose source falls outside the input are marked invalid, which keeps missing pixels separate from pixels that are genuinely dark.</p>
+    <p><b>Nearest neighbor</b> (<code>warpImageNearestNeighbor</code>) rounds (x, y) to the closest integer pixel and copies its color.</p>
+    <p><b>Bilinear</b> (<code>warpImageBilinear</code>) takes the four pixels around (x, y). With x<sub>0</sub> = &lfloor;x&rfloor;, y<sub>0</sub> = &lfloor;y&rfloor;, dx = x &minus; x<sub>0</sub> and dy = y &minus; y<sub>0</sub>, it blends them with weights (1&minus;dx)(1&minus;dy), dx(1&minus;dy), (1&minus;dx)dy and dx&middot;dy. Both are written directly with NumPy array indexing.</p>
+
+    <h4>Rectification</h4>
+    <p>For each photo I located the four corners of a rectangular sign and mapped them, in the order top-left, top-right, bottom-right, bottom-left, to a front-facing rectangle. I computed H with <code>computeH</code> and warped the photo into that rectangle. The output sizes (550&times;1100 and 600&times;900) are my estimates of the real signs' proportions.</p>
+
+    <h3>Rectification 1 &middot; UC Berkeley Student Union directory</h3>
+    <figure class="shot narrow">
+      <a href="media/rect1_points.jpg"><img src="media/rect1_points.jpg" alt="Directory sign photographed at an angle, with its four corners marked" width="445" height="584" loading="lazy"></a>
+      <figcaption>Selected corners.</figcaption>
+    </figure>
+<pre>
+H =
+[[ 7.08623e-01 -7.10399e-03 -9.99407e+01]
+ [ 9.47136e-02  6.59563e-01 -1.42818e+02]
+ [ 2.21611e-04 -4.24219e-05  1.00000e+00]]
+</pre>
+    <div class="pair rect">
+      <figure><a href="media/rect1_nn.png"><img src="media/rect1_nn.png" alt="Rectified directory sign, nearest neighbor" width="550" height="1100" loading="lazy"></a><figcaption><b>Nearest neighbor</b></figcaption></figure>
+      <figure><a href="media/rect1_bilinear.png"><img src="media/rect1_bilinear.png" alt="Rectified directory sign, bilinear" width="550" height="1100" loading="lazy"></a><figcaption><b>Bilinear</b></figcaption></figure>
+    </div>
+
+    <h3>Rectification 2 &middot; Building policies poster</h3>
+    <figure class="shot narrow">
+      <a href="media/rect2_points.jpg"><img src="media/rect2_points.jpg" alt="Policies poster photographed at an angle, with its four corners marked" width="445" height="584" loading="lazy"></a>
+      <figcaption>Selected corners.</figcaption>
+    </figure>
+<pre>
+H =
+[[ 2.11893e+00 -4.78314e-03 -1.23848e+03]
+ [ 4.23568e-01  1.62982e+00 -1.34345e+03]
+ [ 7.33369e-04  1.12945e-04  1.00000e+00]]
+</pre>
+    <div class="pair rect">
+      <figure><a href="media/rect2_nn.png"><img src="media/rect2_nn.png" alt="Rectified policies poster, nearest neighbor" width="600" height="900" loading="lazy"></a><figcaption><b>Nearest neighbor</b></figcaption></figure>
+      <figure><a href="media/rect2_bilinear.png"><img src="media/rect2_bilinear.png" alt="Rectified policies poster, bilinear" width="600" height="900" loading="lazy"></a><figcaption><b>Bilinear</b></figcaption></figure>
+    </div>
+
+    <h4>Nearest neighbor vs. bilinear</h4>
+    <figure class="shot">
+      <a href="media/rect2_zoom.png"><img src="media/rect2_zoom.png" alt="Enlarged crop of poster text: nearest neighbor on the left with jagged letters, bilinear on the right with smooth letters" width="1212" height="450" loading="lazy"></a>
+      <figcaption>The same patch of poster text enlarged 3&times;: <b>nearest neighbor</b> (left) and <b>bilinear</b> (right).</figcaption>
+    </figure>
+    <p>Nearest neighbor is simpler and faster, since it does one lookup per pixel and no arithmetic on colors. However, it produces blocky, jagged edges, which is most visible on the small text of the policies poster because the warp enlarges it. Bilinear interpolation reads four pixels and computes a weighted sum for every output pixel, so it costs more, but letter edges and diagonal lines come out noticeably smoother.</p>
+
+
+    <h2 class="part" id="a-4">A.4 &middot; Blend Images into a Mosaic</h2>
+    <p>H maps the right image into the left image's coordinates. The pans between my shots are large (roughly 31 to 46 degrees), and projecting the right image entirely onto the left image's plane sends its far edge toward infinity. I therefore project both images onto a plane halfway between them. For a rotating camera H = K R K<sup>&minus;1</sup>, so its matrix square root S, computed from the eigendecomposition of H, satisfies S&middot;S = H and corresponds to half the rotation. I warp the left image by S<sup>&minus;1</sup> and the right image by S, so both land on the same middle plane.</p>
+    <p>The warped corners of both images give the bounding box of the shared canvas, and a translation shifts that box to start at (0, 0). Each image is inverse-warped onto the canvas with bilinear interpolation, together with a weight map: the distance of each source pixel from the nearest edge of its own image, and zero where that image has no data. The mosaic is the weighted average (w<sub>1</sub>I<sub>1</sub> + w<sub>2</sub>I<sub>2</sub>) / (w<sub>1</sub> + w<sub>2</sub>). Because each weight falls off toward its image's border, the seam is feathered across the overlap instead of switching abruptly.</p>
+
+    <h3>Mosaic 1 &middot; Locker hallway</h3>
+    <div class="pair">
+      <figure><img src="media/scene1_left.jpg" alt="Scene 1 left source photo" width="1000" height="750" loading="lazy"><figcaption><b>Left</b></figcaption></figure>
+      <figure><img src="media/scene1_right.jpg" alt="Scene 1 right source photo" width="1000" height="750" loading="lazy"><figcaption><b>Right</b></figcaption></figure>
+    </div>
+    <figure class="shot">
+      <a href="media/mosaic1_mosaic.jpg"><img src="media/mosaic1_mosaic.jpg" alt="Stitched panorama of the locker wall and the hallway" width="1932" height="1262" loading="lazy"></a>
+      <figcaption>Mosaic 1.</figcaption>
+    </figure>
+    <p>My first attempt at this scene ghosted because I had stepped forward between the two shots, so the near lockers and the far wall could not both be aligned by one homography. I retook the pair by rotating in place, and the new pair aligns cleanly.</p>
+
+    <h3>Mosaic 2 &middot; Bulletin-board hallway</h3>
+    <div class="pair">
+      <figure><img src="media/scene2_left.jpg" alt="Scene 2 left source photo" width="1000" height="750" loading="lazy"><figcaption><b>Left</b></figcaption></figure>
+      <figure><img src="media/scene2_right.jpg" alt="Scene 2 right source photo" width="1000" height="750" loading="lazy"><figcaption><b>Right</b></figcaption></figure>
+    </div>
+    <figure class="shot">
+      <a href="media/mosaic2_mosaic.jpg"><img src="media/mosaic2_mosaic.jpg" alt="Stitched panorama of the bulletin boards and the mural" width="1982" height="1072" loading="lazy"></a>
+      <figcaption>Mosaic 2.</figcaption>
+    </figure>
+
+    <h3>Mosaic 3 &middot; Exterior building</h3>
+    <div class="pair">
+      <figure><img src="media/scene3_left.jpg" alt="Scene 3 left source photo" width="1000" height="750" loading="lazy"><figcaption><b>Left</b></figcaption></figure>
+      <figure><img src="media/scene3_right.jpg" alt="Scene 3 right source photo" width="1000" height="750" loading="lazy"><figcaption><b>Right</b></figcaption></figure>
+    </div>
+    <figure class="shot">
+      <a href="media/mosaic3_mosaic.jpg"><img src="media/mosaic3_mosaic.jpg" alt="Stitched panorama of the building corner and the plaza" width="2000" height="1022" loading="lazy"></a>
+      <figcaption>Mosaic 3.</figcaption>
+    </figure>
+
+  </main>
+
+  <footer>
+    <a href="https://github.com/0308ehub/0308ehub.github.io">Source on GitHub</a>
+  </footer>
+</body>
+</html>
