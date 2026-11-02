@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Project 4A: Image Warping and Mosaicing · CS180</title>
-  <meta name="description" content="CS180 Project 4A: recovering homographies, rectifying images with inverse warping, and blending photo mosaics.">
+  <title>Project 4: Image Warping and Mosaicing · CS180</title>
+  <meta name="description" content="CS180 Project 4: recovering homographies, rectifying images with inverse warping, blending photo mosaics, and automatically stitching them with Harris corners, MOPS descriptors, and RANSAC.">
   <link rel="stylesheet" href="../style.css">
   <style>
     code {
@@ -88,7 +88,7 @@
   <header>
     <p class="tag">Programming Project #4</p>
     <h1>Image Warping and Mosaicing</h1>
-    <p class="sub">CS180: Intro to Computer Vision and Computational Photography &middot; Part A</p>
+    <p class="sub">CS180: Intro to Computer Vision and Computational Photography &middot; Parts A &amp; B</p>
   </header>
 
   <main>
@@ -277,6 +277,78 @@ H =
       <a href="media/mosaic3_mosaic.jpg"><img src="media/mosaic3_mosaic.jpg" alt="Stitched panorama of the building corner and the plaza" width="2000" height="1022" loading="lazy"></a>
       <figcaption>Mosaic 3.</figcaption>
     </figure>
+
+
+    <h2 class="part" id="b-1">B.1 &middot; Harris Corners and ANMS</h2>
+    <p>I used the <code>harris.py</code> from the project spec to find single-scale Harris corners. This gave me tens of thousands of corners per image, so I then implemented Adaptive Non-Maximal Suppression. For each corner, we have the radius being the distance to the nearest corner that is clearly stronger (f<sub>i</sub> &lt; 0.9&middot;f<sub>j</sub>). The 500k corners with the largest radii are kept, which gives us strong corners that are evenly spread across the entire image.</p>
+    <div class="pair">
+      <figure><a href="media/b_scene2_harris_corners.jpg"><img src="media/b_scene2_harris_corners.jpg" alt="Bulletin-board photo covered in thousands of red Harris corners" width="719" height="539" loading="lazy"></a><figcaption><b>Without ANMS</b> (all Harris corners)</figcaption></figure>
+      <figure><a href="media/b_scene2_anms_corners.jpg"><img src="media/b_scene2_anms_corners.jpg" alt="Bulletin-board photo with 500 evenly spread corners after ANMS" width="719" height="539" loading="lazy"></a><figcaption><b>With ANMS</b> (500 corners)</figcaption></figure>
+    </div>
+
+
+    <h2 class="part" id="b-2">B.2 &middot; Feature Descriptors</h2>
+    <p>I take the 40&times;40 window around each corner and downsample it to an axis-aligned 8&times;8 patch with anti-aliasing. This is what creates the blurring effect. Then, by subtracting each patch's mean and dividing it by its standard deviation, I am able to bias/gain-normalize each patch.</p>
+    <figure class="shot">
+      <a href="media/b_scene2_descriptors.jpg"><img src="media/b_scene2_descriptors.jpg" alt="Ten normalized 8 by 8 grayscale descriptor patches" width="968" height="370" loading="lazy"></a>
+      <figcaption>Ten normalized 8&times;8 descriptors.</figcaption>
+    </figure>
+
+
+    <h2 class="part" id="b-3">B.3 &middot; Feature Matching</h2>
+    <p>For each of the descriptors in the image on the left, I find its first and second nearest neighbors in the right image by squared distance. The match is kept only if the nearest neighbor is much closer than the second: 1-NN / 2-NN &lt; 0.7 in distance, which is about 0.49 in squared error. This is where Figure 6b of the paper shows that most of the incorrect matches are rejected.</p>
+
+    <h3>Scene 1 &middot; Locker hallway</h3>
+    <figure class="shot">
+      <a href="media/b_scene1_feature_matches.jpg"><img src="media/b_scene1_feature_matches.jpg" alt="Left and right photos of the locker hallway with red lines joining matched features" width="1240" height="465" loading="lazy"></a>
+      <figcaption>Matched features, left image on the left.</figcaption>
+    </figure>
+
+    <h3>Scene 2 &middot; Bulletin-board hallway</h3>
+    <figure class="shot">
+      <a href="media/b_scene2_feature_matches.jpg"><img src="media/b_scene2_feature_matches.jpg" alt="Left and right photos of the bulletin-board room with red lines joining matched features" width="1240" height="465" loading="lazy"></a>
+      <figcaption>Matched features, left image on the left.</figcaption>
+    </figure>
+
+    <h3>Scene 3 &middot; Exterior building</h3>
+    <figure class="shot">
+      <a href="media/b_scene3_feature_matches.jpg"><img src="media/b_scene3_feature_matches.jpg" alt="Left and right photos of the building and plaza with red lines joining matched features" width="1240" height="465" loading="lazy"></a>
+      <figcaption>Matched features, left image on the left.</figcaption>
+    </figure>
+
+
+    <h2 class="part" id="b-4">B.4 &middot; RANSAC and Automatic Mosaics</h2>
+    <p>For this part, I implemented 4-point RANSAC. This was run for 2000 iterations, and for each of those iterations, I picked 4 random matches, computed a homography from them, and counted the inliers, which are matches that land within 3 pixels of their partner. The largest inlier set was kept and I recomputed H from all of those inliers with least squares. Then, using my Part A mosaic code, I pass this new H in, so the warping and blending results are the same as 4A. The Part A mosaics are shown next to the automatic Part B ones below.</p>
+
+    <h3>Mosaic 1 &middot; Locker hallway</h3>
+    <figure class="shot">
+      <a href="media/b_scene1_ransac_matches.jpg"><img src="media/b_scene1_ransac_matches.jpg" alt="Left and right photos of the locker hallway with green lines joining the RANSAC inliers" width="1240" height="465" loading="lazy"></a>
+      <figcaption>RANSAC inliers.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure><a href="media/mosaic1_mosaic.jpg"><img src="media/mosaic1_mosaic.jpg" alt="Part A mosaic of the locker hallway" width="1932" height="1262" loading="lazy"></a><figcaption><b>Part A</b></figcaption></figure>
+      <figure><a href="media/b_scene1_auto_mosaic.jpg"><img src="media/b_scene1_auto_mosaic.jpg" alt="Automatic Part B mosaic of the locker hallway" width="1945" height="1271" loading="lazy"></a><figcaption><b>Part B</b> (automatic)</figcaption></figure>
+    </div>
+
+    <h3>Mosaic 2 &middot; Bulletin-board hallway</h3>
+    <figure class="shot">
+      <a href="media/b_scene2_ransac_matches.jpg"><img src="media/b_scene2_ransac_matches.jpg" alt="Left and right photos of the bulletin-board room with green lines joining the RANSAC inliers" width="1240" height="465" loading="lazy"></a>
+      <figcaption>RANSAC inliers.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure><a href="media/mosaic2_mosaic.jpg"><img src="media/mosaic2_mosaic.jpg" alt="Part A mosaic of the bulletin-board room" width="1982" height="1072" loading="lazy"></a><figcaption><b>Part A</b></figcaption></figure>
+      <figure><a href="media/b_scene2_auto_mosaic.jpg"><img src="media/b_scene2_auto_mosaic.jpg" alt="Automatic Part B mosaic of the bulletin-board room" width="1983" height="1073" loading="lazy"></a><figcaption><b>Part B</b> (automatic)</figcaption></figure>
+    </div>
+
+    <h3>Mosaic 3 &middot; Exterior building</h3>
+    <figure class="shot">
+      <a href="media/b_scene3_ransac_matches.jpg"><img src="media/b_scene3_ransac_matches.jpg" alt="Left and right photos of the building and plaza with green lines joining the RANSAC inliers" width="1240" height="465" loading="lazy"></a>
+      <figcaption>RANSAC inliers.</figcaption>
+    </figure>
+    <div class="pair">
+      <figure><a href="media/mosaic3_mosaic.jpg"><img src="media/mosaic3_mosaic.jpg" alt="Part A mosaic of the building and plaza" width="2000" height="1022" loading="lazy"></a><figcaption><b>Part A</b></figcaption></figure>
+      <figure><a href="media/b_scene3_auto_mosaic.jpg"><img src="media/b_scene3_auto_mosaic.jpg" alt="Automatic Part B mosaic of the building and plaza" width="2000" height="1015" loading="lazy"></a><figcaption><b>Part B</b> (automatic)</figcaption></figure>
+    </div>
 
   </main>
 
